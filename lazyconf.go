@@ -1,6 +1,8 @@
 package lazyconf
 
 import (
+	"encoding"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -46,6 +48,7 @@ func ParseEnv(cfg any) error {
 		setterName := ""
 
 		// Parse the tag options
+		parserType := ""
 		for _, opt := range parts[1:] {
 			if opt == "required" {
 				required = true
@@ -53,6 +56,8 @@ func ParseEnv(cfg any) error {
 				defaultVal = strings.TrimPrefix(opt, "default=")
 			} else if strings.HasPrefix(opt, "setter=") {
 				setterName = strings.TrimPrefix(opt, "setter=")
+			} else if strings.HasPrefix(opt, "parser=") {
+				parserType = strings.TrimPrefix(opt, "parser=")
 			}
 		}
 
@@ -101,13 +106,31 @@ func ParseEnv(cfg any) error {
 					return fmt.Errorf("%s: failed to set value for field %s: %v", op, field.Name, errs[0].Interface())
 				}
 				continue
-				//
-				//if setter, ok := v.Field(i).Addr().Interface().(Setter); ok {
-				//	if err := setter.Scan(envVal); err != nil {
-				//		return fmt.Errorf("%s: failed to set value for field %s: %v", op, field.Name, err)
-				//	}
-				//	continue
-				//}
+			}
+		}
+
+		// Handle parser tag if present
+		if parserType != "" {
+			if envVal != "" {
+				if parserType == "text" && checkTextUnmarshaler(field.Type) {
+					if v.Field(i).CanAddr() {
+						unmarshaler := v.Field(i).Addr().Interface().(encoding.TextUnmarshaler)
+						if err := unmarshaler.UnmarshalText([]byte(envVal)); err != nil {
+							return fmt.Errorf("%s: failed to unmarshal text for field %s: %v", op, field.Name, err)
+						}
+						continue
+					}
+				} else if parserType == "json" && checkJSONUnmarshaler(field.Type) {
+					if v.Field(i).CanAddr() {
+						unmarshaler := v.Field(i).Addr().Interface().(json.Unmarshaler)
+						if err := unmarshaler.UnmarshalJSON([]byte(envVal)); err != nil {
+							return fmt.Errorf("%s: failed to unmarshal JSON for field %s: %v", op, field.Name, err)
+						}
+						continue
+					}
+				}
+				// If parser tag is specified but type doesn't implement the interface, return error
+				return fmt.Errorf("%s: field %s does not implement required unmarshaler interface for parser=%s", op, field.Name, parserType)
 			}
 		}
 
@@ -319,9 +342,39 @@ func ParseEnv(cfg any) error {
 					}
 					v.Field(i).Set(reflect.ValueOf(timeVal))
 				} else {
+					// Try UnmarshalText and UnmarshalJSON as fallback for struct types
+					if v.Field(i).CanAddr() {
+						if checkTextUnmarshaler(field.Type) {
+							unmarshaler := v.Field(i).Addr().Interface().(encoding.TextUnmarshaler)
+							if err := unmarshaler.UnmarshalText([]byte(envVal)); err == nil {
+								break // Successfully unmarshaled, exit switch
+							}
+						}
+						if checkJSONUnmarshaler(field.Type) {
+							unmarshaler := v.Field(i).Addr().Interface().(json.Unmarshaler)
+							if err := unmarshaler.UnmarshalJSON([]byte(envVal)); err == nil {
+								break // Successfully unmarshaled, exit switch
+							}
+						}
+					}
 					return fmt.Errorf("%s: unsupported struct type for field %s", op, field.Name)
 				}
 			default:
+				// Try UnmarshalText and UnmarshalJSON as fallback before returning error
+				if v.Field(i).CanAddr() {
+					if checkTextUnmarshaler(field.Type) {
+						unmarshaler := v.Field(i).Addr().Interface().(encoding.TextUnmarshaler)
+						if err := unmarshaler.UnmarshalText([]byte(envVal)); err == nil {
+							break // Successfully unmarshaled, exit switch
+						}
+					}
+					if checkJSONUnmarshaler(field.Type) {
+						unmarshaler := v.Field(i).Addr().Interface().(json.Unmarshaler)
+						if err := unmarshaler.UnmarshalJSON([]byte(envVal)); err == nil {
+							break // Successfully unmarshaled, exit switch
+						}
+					}
+				}
 				return fmt.Errorf("%s: unsupported type for field %s", op, field.Name)
 			}
 		}
@@ -350,4 +403,14 @@ func checkTimeDuration(fieldType reflect.Type) bool {
 
 func checkTime(fieldType reflect.Type) bool {
 	return fieldType == reflect.TypeOf(time.Time{})
+}
+
+func checkTextUnmarshaler(fieldType reflect.Type) bool {
+	textUnmarshalerType := reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+	return reflect.PointerTo(fieldType).Implements(textUnmarshalerType)
+}
+
+func checkJSONUnmarshaler(fieldType reflect.Type) bool {
+	jsonUnmarshalerType := reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
+	return reflect.PointerTo(fieldType).Implements(jsonUnmarshalerType)
 }

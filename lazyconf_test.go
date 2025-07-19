@@ -1,6 +1,7 @@
 package lazyconf
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -71,6 +72,40 @@ func (c *CustomType) Scan(value interface{}) error {
 	val, _ := strconv.ParseInt(str, 10, 32)
 	*c = CustomType{Val: val}
 	return nil
+}
+
+// TextUnmarshalType implements encoding.TextUnmarshaler
+type TextUnmarshalType struct {
+	Value string
+}
+
+func (t *TextUnmarshalType) UnmarshalText(text []byte) error {
+	t.Value = "text:" + string(text)
+	return nil
+}
+
+// JSONUnmarshalType implements json.Unmarshaler
+type JSONUnmarshalType struct {
+	Data map[string]interface{}
+}
+
+func (j *JSONUnmarshalType) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &j.Data)
+}
+
+// BothUnmarshalType implements both interfaces
+type BothUnmarshalType struct {
+	TextValue string
+	JSONData  map[string]interface{}
+}
+
+func (b *BothUnmarshalType) UnmarshalText(text []byte) error {
+	b.TextValue = "text:" + string(text)
+	return nil
+}
+
+func (b *BothUnmarshalType) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &b.JSONData)
 }
 
 // TestParseEnv tests the successful parsing of environment variables into a struct.
@@ -768,5 +803,161 @@ func TestParseEnvUnsupportedSliceType(t *testing.T) {
 	err := ParseEnv(cfg)
 	if err == nil {
 		t.Fatal("expected an error when parsing unsupported slice element type, but got none")
+	}
+}
+
+// TestParseEnvParserText tests parser="text" tag functionality.
+func TestParseEnvParserText(t *testing.T) {
+	type TextParserConfig struct {
+		TextField TextUnmarshalType `env:"TEXT_FIELD,parser=text"`
+	}
+
+	_ = os.Setenv("TEXT_FIELD", "hello")
+
+	cfg := &TextParserConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	expected := "text:hello"
+	if cfg.TextField.Value != expected {
+		t.Errorf("expected TextField.Value to be '%s', got '%s'", expected, cfg.TextField.Value)
+	}
+}
+
+// TestParseEnvParserJSON tests parser="json" tag functionality.
+func TestParseEnvParserJSON(t *testing.T) {
+	type JSONParserConfig struct {
+		JSONField JSONUnmarshalType `env:"JSON_FIELD,parser=json"`
+	}
+
+	_ = os.Setenv("JSON_FIELD", `{"key":"value","number":42}`)
+
+	cfg := &JSONParserConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	if cfg.JSONField.Data["key"] != "value" {
+		t.Errorf("expected JSONField.Data[\"key\"] to be 'value', got '%v'", cfg.JSONField.Data["key"])
+	}
+	if cfg.JSONField.Data["number"] != float64(42) {
+		t.Errorf("expected JSONField.Data[\"number\"] to be 42, got '%v'", cfg.JSONField.Data["number"])
+	}
+}
+
+// TestParseEnvParserBothText tests parser="text" with type that implements both interfaces.
+func TestParseEnvParserBothText(t *testing.T) {
+	type BothParserConfig struct {
+		BothField BothUnmarshalType `env:"BOTH_FIELD,parser=text"`
+	}
+
+	_ = os.Setenv("BOTH_FIELD", "hello")
+
+	cfg := &BothParserConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	expected := "text:hello"
+	if cfg.BothField.TextValue != expected {
+		t.Errorf("expected BothField.TextValue to be '%s', got '%s'", expected, cfg.BothField.TextValue)
+	}
+	if cfg.BothField.JSONData != nil {
+		t.Errorf("expected BothField.JSONData to be nil, got '%v'", cfg.BothField.JSONData)
+	}
+}
+
+// TestParseEnvParserBothJSON tests parser="json" with type that implements both interfaces.
+func TestParseEnvParserBothJSON(t *testing.T) {
+	type BothParserConfig struct {
+		BothField BothUnmarshalType `env:"BOTH_FIELD,parser=json"`
+	}
+
+	_ = os.Setenv("BOTH_FIELD", `{"test":"data"}`)
+
+	cfg := &BothParserConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	if cfg.BothField.JSONData["test"] != "data" {
+		t.Errorf("expected BothField.JSONData[\"test\"] to be 'data', got '%v'", cfg.BothField.JSONData["test"])
+	}
+	if cfg.BothField.TextValue != "" {
+		t.Errorf("expected BothField.TextValue to be empty, got '%s'", cfg.BothField.TextValue)
+	}
+}
+
+// TestParseEnvFallbackText tests fallback to UnmarshalText without parser tag.
+func TestParseEnvFallbackText(t *testing.T) {
+	type FallbackConfig struct {
+		TextField TextUnmarshalType `env:"TEXT_FIELD"`
+	}
+
+	_ = os.Setenv("TEXT_FIELD", "fallback")
+
+	cfg := &FallbackConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	expected := "text:fallback"
+	if cfg.TextField.Value != expected {
+		t.Errorf("expected TextField.Value to be '%s', got '%s'", expected, cfg.TextField.Value)
+	}
+}
+
+// TestParseEnvFallbackJSON tests fallback to UnmarshalJSON without parser tag.
+func TestParseEnvFallbackJSON(t *testing.T) {
+	type FallbackConfig struct {
+		JSONField JSONUnmarshalType `env:"JSON_FIELD"`
+	}
+
+	_ = os.Setenv("JSON_FIELD", `{"fallback":"test"}`)
+
+	cfg := &FallbackConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	if cfg.JSONField.Data["fallback"] != "test" {
+		t.Errorf("expected JSONField.Data[\"fallback\"] to be 'test', got '%v'", cfg.JSONField.Data["fallback"])
+	}
+}
+
+// TestParseEnvParserTextError tests error when parser="text" but type doesn't implement TextUnmarshaler.
+func TestParseEnvParserTextError(t *testing.T) {
+	type ErrorConfig struct {
+		StringField string `env:"STRING_FIELD,parser=text"`
+	}
+
+	_ = os.Setenv("STRING_FIELD", "test")
+
+	cfg := &ErrorConfig{}
+	err := ParseEnv(cfg)
+	if err == nil {
+		t.Fatal("expected an error when parser=text but type doesn't implement TextUnmarshaler, but got none")
+	}
+}
+
+// TestParseEnvParserJSONError tests error when parser="json" but type doesn't implement JSONUnmarshaler.
+func TestParseEnvParserJSONError(t *testing.T) {
+	type ErrorConfig struct {
+		StringField string `env:"STRING_FIELD,parser=json"`
+	}
+
+	_ = os.Setenv("STRING_FIELD", "test")
+
+	cfg := &ErrorConfig{}
+	err := ParseEnv(cfg)
+	if err == nil {
+		t.Fatal("expected an error when parser=json but type doesn't implement JSONUnmarshaler, but got none")
 	}
 }
