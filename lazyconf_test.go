@@ -961,3 +961,90 @@ func TestParseEnvParserJSONError(t *testing.T) {
 		t.Fatal("expected an error when parser=json but type doesn't implement JSONUnmarshaler, but got none")
 	}
 }
+
+// Type aliases for testing UnmarshalText/JSON with basic types
+type StringAlias string
+
+func (s *StringAlias) UnmarshalText(text []byte) error {
+	*s = StringAlias("custom:" + string(text))
+	return nil
+}
+
+type IntAlias int
+
+func (i *IntAlias) UnmarshalText(text []byte) error {
+	val, err := strconv.ParseInt(string(text), 10, 64)
+	if err != nil {
+		return err
+	}
+	*i = IntAlias(val * 10) // Multiply by 10 to show custom behavior
+	return nil
+}
+
+type JSONAlias map[string]interface{}
+
+func (j *JSONAlias) UnmarshalJSON(data []byte) error {
+	temp := make(map[string]interface{})
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+	// Add a prefix to show custom behavior
+	result := make(map[string]interface{})
+	for k, v := range temp {
+		result["custom_"+k] = v
+	}
+	*j = JSONAlias(result)
+	return nil
+}
+
+// TestParseEnvTypeAliasUnmarshalText demonstrates the issue where type aliases
+// that implement UnmarshalText should use that method but currently don't.
+func TestParseEnvTypeAliasUnmarshalText(t *testing.T) {
+	type AliasConfig struct {
+		StringField StringAlias `env:"STRING_FIELD"`
+		IntField    IntAlias    `env:"INT_FIELD"`
+	}
+
+	_ = os.Setenv("STRING_FIELD", "hello")
+	_ = os.Setenv("INT_FIELD", "5")
+
+	cfg := &AliasConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	// Currently this test will fail because type aliases use standard parsing
+	// After the fix, these should use UnmarshalText
+	expectedString := StringAlias("custom:hello")
+	if cfg.StringField != expectedString {
+		t.Errorf("StringAlias should use UnmarshalText. Expected %q, got %q", expectedString, cfg.StringField)
+	}
+
+	expectedInt := IntAlias(50) // 5 * 10
+	if cfg.IntField != expectedInt {
+		t.Errorf("IntAlias should use UnmarshalText. Expected %d, got %d", expectedInt, cfg.IntField)
+	}
+}
+
+// TestParseEnvTypeAliasUnmarshalJSON demonstrates the issue where type aliases
+// that implement UnmarshalJSON should use that method but currently don't.
+func TestParseEnvTypeAliasUnmarshalJSON(t *testing.T) {
+	type JSONConfig struct {
+		JSONField JSONAlias `env:"JSON_FIELD"`
+	}
+
+	_ = os.Setenv("JSON_FIELD", `{"key":"value"}`)
+
+	cfg := &JSONConfig{}
+	err := ParseEnv(cfg)
+	if err != nil {
+		t.Fatalf("ParseEnv returned an error: %v", err)
+	}
+
+	// Currently this test will fail because type aliases use standard parsing
+	// After the fix, this should use UnmarshalJSON with custom prefix
+	if cfg.JSONField["custom_key"] != "value" {
+		t.Errorf("JSONAlias should use UnmarshalJSON with custom prefix. Expected custom_key=value, got %+v", cfg.JSONField)
+	}
+}

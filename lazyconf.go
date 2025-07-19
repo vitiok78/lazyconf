@@ -136,6 +136,11 @@ func ParseEnv(cfg any) error {
 
 		// Set the value based on the field type
 		if envVal != "" {
+			// Try UnmarshalText/JSON first for all types
+			if tryUnmarshalMethods(v.Field(i), field.Type, envVal) {
+				continue
+			}
+
 			switch field.Type.Kind() {
 			case reflect.String:
 				v.Field(i).SetString(envVal)
@@ -196,55 +201,86 @@ func ParseEnv(cfg any) error {
 					// If Slice elements are of basic types then set the value
 					switch field.Type.Elem().Kind() {
 					case reflect.String:
-						refSlice = reflect.ValueOf(vals)
+						// Try UnmarshalText/JSON for each string element first
+						for _, vl := range vals {
+							if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+								refSlice = reflect.Append(refSlice, elem)
+							} else {
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(vl))
+							}
+						}
 					case reflect.Int:
 						for _, vl := range vals {
-							intVal, err := strconv.ParseInt(vl, 10, 32)
-							if err != nil {
-								return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+							if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+								refSlice = reflect.Append(refSlice, elem)
+							} else {
+								intVal, err := strconv.ParseInt(vl, 10, 32)
+								if err != nil {
+									return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+								}
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(int(intVal)))
 							}
-							refSlice = reflect.Append(refSlice, reflect.ValueOf(int(intVal)))
 						}
 					case reflect.Int8:
 						for _, vl := range vals {
-							intVal, err := strconv.ParseInt(vl, 10, 8)
-							if err != nil {
-								return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+							if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+								refSlice = reflect.Append(refSlice, elem)
+							} else {
+								intVal, err := strconv.ParseInt(vl, 10, 8)
+								if err != nil {
+									return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+								}
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(int8(intVal)))
 							}
-							refSlice = reflect.Append(refSlice, reflect.ValueOf(int8(intVal)))
 						}
 					case reflect.Int16:
 						for _, vl := range vals {
-							intVal, err := strconv.ParseInt(vl, 10, 16)
-							if err != nil {
-								return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+							if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+								refSlice = reflect.Append(refSlice, elem)
+							} else {
+								intVal, err := strconv.ParseInt(vl, 10, 16)
+								if err != nil {
+									return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+								}
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(int16(intVal)))
 							}
-							refSlice = reflect.Append(refSlice, reflect.ValueOf(int16(intVal)))
 						}
 					case reflect.Int32:
 						for _, vl := range vals {
-							intVal, err := strconv.ParseInt(vl, 10, 32)
-							if err != nil {
-								return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+							if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+								refSlice = reflect.Append(refSlice, elem)
+							} else {
+								intVal, err := strconv.ParseInt(vl, 10, 32)
+								if err != nil {
+									return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+								}
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(int32(intVal)))
 							}
-							refSlice = reflect.Append(refSlice, reflect.ValueOf(int32(intVal)))
 						}
 					case reflect.Int64:
 						if checkTimeDuration(field.Type.Elem()) {
 							for _, vl := range vals {
-								dur, err := time.ParseDuration(vl)
-								if err != nil {
-									return fmt.Errorf("%s: invalid time duration value for %s: %v", op, envKey, err)
+								if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+									refSlice = reflect.Append(refSlice, elem)
+								} else {
+									dur, err := time.ParseDuration(vl)
+									if err != nil {
+										return fmt.Errorf("%s: invalid time duration value for %s: %v", op, envKey, err)
+									}
+									refSlice = reflect.Append(refSlice, reflect.ValueOf(dur))
 								}
-								refSlice = reflect.Append(refSlice, reflect.ValueOf(dur))
 							}
 						} else {
 							for _, vl := range vals {
-								intVal, err := strconv.ParseInt(vl, 10, 64)
-								if err != nil {
-									return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+								if elem, ok := tryUnmarshalSliceElement(field.Type.Elem(), vl); ok {
+									refSlice = reflect.Append(refSlice, elem)
+								} else {
+									intVal, err := strconv.ParseInt(vl, 10, 64)
+									if err != nil {
+										return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+									}
+									refSlice = reflect.Append(refSlice, reflect.ValueOf(intVal))
 								}
-								refSlice = reflect.Append(refSlice, reflect.ValueOf(intVal))
 							}
 						}
 					case reflect.Uint:
@@ -413,4 +449,59 @@ func checkTextUnmarshaler(fieldType reflect.Type) bool {
 func checkJSONUnmarshaler(fieldType reflect.Type) bool {
 	jsonUnmarshalerType := reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
 	return reflect.PointerTo(fieldType).Implements(jsonUnmarshalerType)
+}
+
+// tryUnmarshalMethods attempts to unmarshal using UnmarshalText or UnmarshalJSON
+// before falling back to standard parsing. Returns true if successfully unmarshaled.
+func tryUnmarshalMethods(fieldValue reflect.Value, fieldType reflect.Type, envVal string) bool {
+	if envVal == "" || !fieldValue.CanAddr() {
+		return false
+	}
+
+	// Try UnmarshalText first
+	if checkTextUnmarshaler(fieldType) {
+		unmarshaler := fieldValue.Addr().Interface().(encoding.TextUnmarshaler)
+		if err := unmarshaler.UnmarshalText([]byte(envVal)); err == nil {
+			return true
+		}
+	}
+
+	// Try UnmarshalJSON second
+	if checkJSONUnmarshaler(fieldType) {
+		unmarshaler := fieldValue.Addr().Interface().(json.Unmarshaler)
+		if err := unmarshaler.UnmarshalJSON([]byte(envVal)); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// tryUnmarshalSliceElement attempts to unmarshal a slice element using UnmarshalText or UnmarshalJSON
+// before falling back to standard parsing. Returns the parsed value and true if successful.
+func tryUnmarshalSliceElement(elemType reflect.Type, val string) (reflect.Value, bool) {
+	if val == "" {
+		return reflect.Value{}, false
+	}
+
+	// Create a new element of the slice type
+	elem := reflect.New(elemType)
+
+	// Try UnmarshalText first
+	if checkTextUnmarshaler(elemType) {
+		unmarshaler := elem.Interface().(encoding.TextUnmarshaler)
+		if err := unmarshaler.UnmarshalText([]byte(val)); err == nil {
+			return elem.Elem(), true
+		}
+	}
+
+	// Try UnmarshalJSON second
+	if checkJSONUnmarshaler(elemType) {
+		unmarshaler := elem.Interface().(json.Unmarshaler)
+		if err := unmarshaler.UnmarshalJSON([]byte(val)); err == nil {
+			return elem.Elem(), true
+		}
+	}
+
+	return reflect.Value{}, false
 }
