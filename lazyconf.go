@@ -288,6 +288,18 @@ func ParseEnv(cfg any) error {
 							}
 							refSlice = reflect.Append(refSlice, reflect.ValueOf(boolVal))
 						}
+					case reflect.Struct:
+						if checkTime(field.Type.Elem()) {
+							for _, vl := range vals {
+								timeVal, err := time.Parse(time.RFC3339, vl)
+								if err != nil {
+									return fmt.Errorf("%s: invalid time value for %s: %v", op, envKey, err)
+								}
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(timeVal))
+							}
+						} else {
+							return fmt.Errorf("%s: unsupported struct slice type for field %s", op, field.Name)
+						}
 					default:
 						return fmt.Errorf("%s: unsupported slice type for field %s", op, field.Name)
 					}
@@ -299,6 +311,16 @@ func ParseEnv(cfg any) error {
 					return fmt.Errorf("%s: invalid complex value for %s: %v", op, envKey, err)
 				}
 				v.Field(i).SetComplex(val)
+			case reflect.Struct:
+				if checkTime(field.Type) {
+					timeVal, err := time.Parse(time.RFC3339, envVal)
+					if err != nil {
+						return fmt.Errorf("%s: invalid time value for field \"%s\", env var \"%s\": %s, error: %v", op, field.Name, envKey, envVal, err)
+					}
+					v.Field(i).Set(reflect.ValueOf(timeVal))
+				} else {
+					return fmt.Errorf("%s: unsupported struct type for field %s", op, field.Name)
+				}
 			default:
 				return fmt.Errorf("%s: unsupported type for field %s", op, field.Name)
 			}
@@ -326,7 +348,6 @@ func checkTimeDuration(fieldType reflect.Type) bool {
 	return fieldType == reflect.TypeOf(time.Duration(0))
 }
 
-//// TODO: Implement time.Time support
-//func checkTime(fieldType reflect.Type) bool {
-//	return fieldType == reflect.TypeOf(time.Time{})
-//}
+func checkTime(fieldType reflect.Type) bool {
+	return fieldType == reflect.TypeOf(time.Time{})
+}

@@ -43,8 +43,8 @@ type Config struct {
 	TimeDuration  time.Duration   `env:"TIME_DURATION_FIELD"`
 	TimeDurations []time.Duration `env:"TIME_DURATIONS_FIELD"`
 
-	// TODO support time.Time
-	// Time          time.Time       `env:"TIME_FIELD"`
+	Time  time.Time   `env:"TIME_FIELD"`
+	Times []time.Time `env:"TIMES_FIELD"`
 
 	CustomField      CustomType   `env:"INT_FIELD"`
 	CustomFieldSlice []CustomType `env:"SLICE_FIELD"`
@@ -84,9 +84,8 @@ func TestParseEnv(t *testing.T) {
 	_ = os.Setenv("SLICE_FIELD", "1,2,3")
 	_ = os.Setenv("TIME_DURATION_FIELD", "5m")
 	_ = os.Setenv("TIME_DURATIONS_FIELD", "5m,10h,1h5m")
-
-	// TODO support time.Time
-	// _ = os.Setenv("TIME_FIELD", time.Now().String())
+	_ = os.Setenv("TIME_FIELD", "2023-07-19T15:30:45Z")
+	_ = os.Setenv("TIMES_FIELD", "2023-07-19T15:30:45Z,2023-07-20T10:15:30Z")
 
 	// Create a config instance
 	cfg := &Config{}
@@ -119,6 +118,26 @@ func TestParseEnv(t *testing.T) {
 	expectedSlice := []int{1, 2, 3}
 	if !reflect.DeepEqual(cfg.SliceField, expectedSlice) {
 		t.Errorf("expected SliceField to be %v, got %v", expectedSlice, cfg.SliceField)
+	}
+
+	// Validate time.Time field
+	expectedTime, _ := time.Parse(time.RFC3339, "2023-07-19T15:30:45Z")
+	if !cfg.Time.Equal(expectedTime) {
+		t.Errorf("expected Time to be %v, got %v", expectedTime, cfg.Time)
+	}
+
+	// Validate []time.Time field
+	expectedTime1, _ := time.Parse(time.RFC3339, "2023-07-19T15:30:45Z")
+	expectedTime2, _ := time.Parse(time.RFC3339, "2023-07-20T10:15:30Z")
+	expectedTimes := []time.Time{expectedTime1, expectedTime2}
+	if len(cfg.Times) != len(expectedTimes) {
+		t.Errorf("expected Times length to be %d, got %d", len(expectedTimes), len(cfg.Times))
+	} else {
+		for i, expectedT := range expectedTimes {
+			if !cfg.Times[i].Equal(expectedT) {
+				t.Errorf("expected Times[%d] to be %v, got %v", i, expectedT, cfg.Times[i])
+			}
+		}
 	}
 }
 
@@ -197,6 +216,30 @@ func TestParseEnvInvalidSlice(t *testing.T) {
 	err := ParseEnv(cfg)
 	if err == nil {
 		t.Fatal("expected an error when SLICE_FIELD contains invalid integers, but got none")
+	}
+}
+
+// TestParseEnvInvalidTime tests the error handling for invalid time values.
+func TestParseEnvInvalidTime(t *testing.T) {
+	_ = os.Setenv("TIME_FIELD", "not-a-time")
+
+	cfg := &Config{}
+
+	err := ParseEnv(cfg)
+	if err == nil {
+		t.Fatal("expected an error when TIME_FIELD is not a valid time, but got none")
+	}
+}
+
+// TestParseEnvInvalidTimeSlice tests the error handling for invalid time slice values.
+func TestParseEnvInvalidTimeSlice(t *testing.T) {
+	_ = os.Setenv("TIMES_FIELD", "2023-07-19T15:30:45Z,not-a-time,2023-07-20T10:15:30Z")
+
+	cfg := &Config{}
+
+	err := ParseEnv(cfg)
+	if err == nil {
+		t.Fatal("expected an error when TIMES_FIELD contains invalid time, but got none")
 	}
 }
 
