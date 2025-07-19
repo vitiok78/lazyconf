@@ -72,6 +72,17 @@ type Config struct {
 }
 ```
 
+**Environment Variables Setup:**
+```bash
+export STRING_VAL="hello world"
+export INT_VAL="42"
+export INT64_VAL="9223372036854775807"
+export UINT_VAL="123"
+export FLOAT_VAL="3.14159"
+export BOOL_VAL="true"
+export COMPLEX_VAL="1+2i"
+```
+
 ### Time Types
 ```go
 type Config struct {
@@ -83,6 +94,12 @@ type Config struct {
 }
 ```
 
+**Environment Variables Setup:**
+```bash
+export CREATED_AT="2023-12-25T15:30:45Z"
+export TIMEOUT="5m30s"
+```
+
 ### Slices (Comma-separated values)
 ```go
 type Config struct {
@@ -91,6 +108,14 @@ type Config struct {
     Timeouts  []time.Duration `env:"TIMEOUTS"`        // "5s,10s,15s"
     Times     []time.Time     `env:"TIMES"`           // "2023-01-01T00:00:00Z,2023-01-02T00:00:00Z"
 }
+```
+
+**Environment Variables Setup:**
+```bash
+export PORTS="8080,8081,8082"
+export HOSTS="host1,host2,host3"
+export TIMEOUTS="5s,10s,15s"
+export TIMES="2023-01-01T00:00:00Z,2023-01-02T00:00:00Z"
 ```
 
 ### Nested Structs
@@ -108,6 +133,15 @@ type Config struct {
 }
 ```
 
+**Environment Variables Setup:**
+```bash
+export DB_HOST="database.example.com"
+export DB_PORT="3306"
+export DB_USER="admin"
+export DB_PASS="secret123"
+export APP_NAME="my-application"
+```
+
 ## Tag Options
 
 ### Required Fields
@@ -115,6 +149,11 @@ type Config struct {
 type Config struct {
     APIKey string `env:"API_KEY,required"`
 }
+```
+
+**Environment Variables Setup:**
+```bash
+export API_KEY="your-secret-api-key-here"
 ```
 
 ### Default Values
@@ -125,6 +164,18 @@ type Config struct {
     Debug   bool   `env:"DEBUG,default=false"`
     Timeout string `env:"TIMEOUT,default=30s"`
 }
+```
+
+**Environment Variables Setup (optional - defaults will be used if not set):**
+```bash
+# Override defaults by setting environment variables
+export PORT="3000"
+export HOST="0.0.0.0"
+export DEBUG="true"
+export TIMEOUT="60s"
+
+# Or leave unset to use defaults:
+# PORT=8080, HOST=localhost, DEBUG=false, TIMEOUT=30s
 ```
 
 ### Custom Setters
@@ -140,6 +191,12 @@ func (c *Config) SetCustomField(val string) error {
 }
 ```
 
+**Environment Variables Setup:**
+```bash
+export CUSTOM_VAL="raw-value"
+# This will be processed by SetCustomField and result in: "processed:raw-value"
+```
+
 ### Parser Options
 ```go
 type Config struct {
@@ -149,6 +206,12 @@ type Config struct {
     // Force JSON unmarshaling  
     JSONField CustomType `env:"JSON_VAL,parser=json"`
 }
+```
+
+**Environment Variables Setup:**
+```bash
+export TEXT_VAL="plain text value"
+export JSON_VAL='{"key":"value","number":42}'
 ```
 
 ## Custom Types
@@ -180,6 +243,13 @@ type Config struct {
 }
 ```
 
+**Environment Variables Setup:**
+```bash
+export STATUS="active"
+# or
+export STATUS="inactive"
+```
+
 ### UnmarshalText Interface
 ```go
 type CustomID struct {
@@ -196,6 +266,12 @@ type Config struct {
 }
 ```
 
+**Environment Variables Setup:**
+```bash
+export CUSTOM_ID="12345"
+# This will be processed by UnmarshalText and result in: Value="id:12345"
+```
+
 ### UnmarshalJSON Interface
 ```go
 type JSONConfig struct {
@@ -209,6 +285,12 @@ func (j *JSONConfig) UnmarshalJSON(data []byte) error {
 type Config struct {
     Settings JSONConfig `env:"SETTINGS"` // Set as: SETTINGS='{"key":"value"}'
 }
+```
+
+**Environment Variables Setup:**
+```bash
+export SETTINGS='{"database":{"host":"localhost","port":5432},"features":{"debug":true,"cache":false}}'
+# This will be processed by UnmarshalJSON and populate the Data map
 ```
 
 ## Advanced Examples
