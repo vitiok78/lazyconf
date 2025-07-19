@@ -2,7 +2,6 @@ package lazyconf
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"strconv"
@@ -208,22 +207,22 @@ func ParseEnv(cfg any) error {
 							refSlice = reflect.Append(refSlice, reflect.ValueOf(int32(intVal)))
 						}
 					case reflect.Int64:
-						for _, vl := range vals {
-							log.Println(vals)
-							if checkTimeDuration(field.Type.Elem()) {
-								log.Println(vl)
+						if checkTimeDuration(field.Type.Elem()) {
+							for _, vl := range vals {
 								dur, err := time.ParseDuration(vl)
 								if err != nil {
 									return fmt.Errorf("%s: invalid time duration value for %s: %v", op, envKey, err)
 								}
-								reflect.Append(refSlice, reflect.ValueOf(dur))
-								break
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(dur))
 							}
-							intVal, err := strconv.ParseInt(vl, 10, 64)
-							if err != nil {
-								return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+						} else {
+							for _, vl := range vals {
+								intVal, err := strconv.ParseInt(vl, 10, 64)
+								if err != nil {
+									return fmt.Errorf("%s: invalid integer value for %s: %v", op, envKey, err)
+								}
+								refSlice = reflect.Append(refSlice, reflect.ValueOf(intVal))
 							}
-							refSlice = reflect.Append(refSlice, reflect.ValueOf(intVal))
 						}
 					case reflect.Uint:
 						for _, vl := range vals {
@@ -327,7 +326,7 @@ func checkTimeDuration(fieldType reflect.Type) bool {
 	return fieldType == reflect.TypeOf(time.Duration(0))
 }
 
-// TODO: Implement time.Time support
+//// TODO: Implement time.Time support
 //func checkTime(fieldType reflect.Type) bool {
 //	return fieldType == reflect.TypeOf(time.Time{})
 //}
